@@ -1,8 +1,19 @@
 {
   "name": "tessera",
-  "private": true,
   "version": "0.1.0",
   "type": "module",
+  "bin": {
+    "tessera": "bin/tessera.js"
+  },
+  "files": [
+    "bin",
+    "server",
+    "src",
+    "examples",
+    "index.html",
+    "vite.config.js",
+    "tessera.config.json"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",

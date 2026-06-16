@@ -6,10 +6,34 @@ Figma Variables. Each token is a tile; your design system is the mosaic.
 
 > **Goal:** a repo-agnostic *interface* for editing an app's tokens — not a dependency
 > of that app. You point Tessera at a token folder; the app builds its own CSS/JS from
-> the JSON independently (e.g. via Style Dictionary). Config-driven multi-repo support
-> is in progress.
+> the JSON independently (e.g. via Style Dictionary). Tessera is just the editor.
 
-## Run
+## Use it on your app (CLI)
+
+Install Tessera once, then run it inside any repo — it edits *that* repo's tokens and
+adds nothing to its `package.json`.
+
+```bash
+# one-time, from your clone of Tessera
+git clone https://github.com/Kukkaburra/tessera && cd tessera && npm install && npm link
+
+# then, in any app repo
+cd ~/dev/my-app
+tessera init       # scaffolds tessera.config.json (infers your token layout)
+tessera            # opens the editor at http://localhost:5180, editing my-app's tokens
+```
+
+To update across all your apps: `git pull` in your Tessera clone. Nothing is copied
+into the apps, so they all pick up the new version on the next `tessera` run.
+
+```
+tessera            edit tokens in the current directory
+tessera --root <dir> --port <n> --open
+tessera init       write a tessera.config.json (infers structure)
+tessera --help | --version
+```
+
+## Develop Tessera itself
 
 ```bash
 npm install
@@ -17,7 +41,7 @@ npm run dev        # http://localhost:5180
 ```
 
 The dev server doubles as the file API: it reads and writes token JSON directly on disk
-(no separate backend). By default it uses `tokens/` if present, otherwise the bundled
+(no separate backend). It uses `tokens/` if present, otherwise the bundled
 `examples/tokens/` fixture — so a fresh clone runs out of the box.
 
 ## Token files
