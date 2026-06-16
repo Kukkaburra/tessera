@@ -53,13 +53,29 @@ function initConfig() {
   }
   const tokensDir = ['tokens', 'design/tokens', 'src/tokens'].find((d) => existsSync(path.join(cwd, d))) || 'tokens';
   const dir = path.join(cwd, tokensDir);
-  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json') && !f.startsWith('.')) : [];
-
   const byName = {};
-  for (const f of files) {
-    const base = f.replace(/\.tokens\.json$/, '').replace(/\.json$/, '');
-    const [name, mode] = base.split('.'); // "semantic.dark" → semantic / dark
-    (byName[name] ||= { name, files: {} }).files[mode || 'default'] = f;
+  let fileCount = 0;
+  const metaPath = path.join(dir, '$metadata.json');
+
+  if (existsSync(metaPath)) {
+    // Tokens Studio for Figma: $metadata.tokenSetOrder lists "group/name" sets,
+    // each stored at <group>/<name>.json.
+    const order = JSON.parse(readFileSync(metaPath, 'utf8')).tokenSetOrder || [];
+    for (const set of order) {
+      const i = set.lastIndexOf('/');
+      const group = i >= 0 ? set.slice(0, i) : set;
+      const mode = i >= 0 ? set.slice(i + 1) : 'default';
+      (byName[group] ||= { name: group, files: {} }).files[mode] = `${set}.json`;
+      fileCount++;
+    }
+  } else if (existsSync(dir)) {
+    // Flat layout: <collection>.<mode>.tokens.json
+    for (const f of readdirSync(dir).filter((f) => f.endsWith('.json') && !f.startsWith('.') && !f.startsWith('$'))) {
+      const base = f.replace(/\.tokens\.json$/, '').replace(/\.json$/, '');
+      const [name, mode] = base.split('.');
+      (byName[name] ||= { name, files: {} }).files[mode || 'default'] = f;
+      fileCount++;
+    }
   }
   const collections = Object.values(byName).sort((a, b) => rankCollection(a.name) - rankCollection(b.name));
   for (const c of collections) {
@@ -77,8 +93,8 @@ function initConfig() {
     preview: { collection: (themed || collections[collections.length - 1] || { name: 'tokens' }).name },
   };
   writeFileSync(target, JSON.stringify(config, null, 2) + '\n');
-  console.log(`✓ Wrote ${path.relative(cwd, target)} — ${files.length} token file(s), ${collections.length} collection(s).`);
-  if (!files.length) console.log(`  (no token files found in ${tokensDir}/ — edit the config to match your layout)`);
+  console.log(`✓ Wrote ${path.relative(cwd, target)} — ${fileCount} token file(s), ${collections.length} collection(s).`);
+  if (!fileCount) console.log(`  (no token files found in ${tokensDir}/ — edit the config to match your layout)`);
 }
 
 async function serve() {

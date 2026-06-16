@@ -43,8 +43,32 @@ function loadConfig(rootDir) {
   return DEFAULT_CONFIG;
 }
 
-// A token file is any non-dot *.json (we treat *.tokens.json and *.json alike).
-const isTokenFile = (f) => f.endsWith('.json') && !f.startsWith('.');
+// A relative *.json path inside tokensDir (subfolders allowed), with no traversal.
+function safeRel(name) {
+  if (typeof name !== 'string' || !name) return null;
+  const norm = path.posix.normalize(name.replace(/\\/g, '/'));
+  if (norm.startsWith('/') || norm.split('/').some((s) => s === '..' || s === '')) return null;
+  return norm.endsWith('.json') ? norm : null;
+}
+
+// Recursively list token files (relative posix paths), skipping dot/$ files
+// (.order.json, $metadata.json, $themes.json) — those are config, not tokens.
+async function walkTokenFiles(dir, base = '') {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const e of entries) {
+    if (e.name.startsWith('.') || e.name.startsWith('$')) continue;
+    const rel = base ? `${base}/${e.name}` : e.name;
+    if (e.isDirectory()) out.push(...(await walkTokenFiles(path.join(dir, e.name), rel)));
+    else if (e.name.endsWith('.json')) out.push(rel);
+  }
+  return out;
+}
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -72,13 +96,6 @@ function readBody(req) {
     });
     req.on('error', reject);
   });
-}
-
-// Guard against path traversal — only a bare filename, must end in .json.
-function safeName(name) {
-  const base = path.basename(name || '');
-  if (!base || base !== name || !base.endsWith('.json')) return null;
-  return base;
 }
 
 export function fileApi(options = {}) {
@@ -114,6 +131,15 @@ export function fileApi(options = {}) {
     return [...ordered, ...rest];
   }
 
+  // Resolve a safe relative name to an absolute path confined to tokensDir.
+  function bounded(name) {
+    const rel = safeRel(name);
+    if (!rel) return null;
+    const base = path.resolve(tokensDir);
+    const full = path.resolve(base, rel);
+    return full === base || full.startsWith(base + path.sep) ? full : null;
+  }
+
   return {
     name: 'token-file-api',
     configureServer(server) {
@@ -124,10 +150,10 @@ export function fileApi(options = {}) {
         try {
           if (req.method === 'OPTIONS') return json(res, 204, {});
 
-          // GET /api/tokens — list (in saved order)
+          // GET /api/tokens — list (in saved order; recurses subfolders)
           if (req.method === 'GET' && url.pathname === '/api/tokens') {
             await ensureDir();
-            const all = (await readdir(tokensDir)).filter(isTokenFile);
+            const all = await walkTokenFiles(tokensDir);
             const files = applyOrder(all, await readOrder());
             return json(res, 200, { dir: tokensDir, files });
           }
@@ -146,40 +172,37 @@ export function fileApi(options = {}) {
           if (req.method === 'PUT' && url.pathname === '/api/order') {
             await ensureDir();
             const body = await readBody(req);
-            const order = Array.isArray(body.order) ? body.order.filter((n) => safeName(n)) : [];
+            const order = Array.isArray(body.order) ? body.order.filter((n) => safeRel(n)) : [];
             await writeFile(path.join(tokensDir, ORDER_FILE), JSON.stringify({ order }, null, 2) + '\n', 'utf8');
             return json(res, 200, { ok: true, order });
           }
 
-          // GET /api/tokens/:name — read
           const readMatch = url.pathname.match(/^\/api\/tokens\/(.+)$/);
+          const reqName = readMatch ? safeRel(decodeURIComponent(readMatch[1])) : null;
+          const reqFull = readMatch ? bounded(decodeURIComponent(readMatch[1])) : null;
+
+          // GET /api/tokens/:name — read
           if (req.method === 'GET' && readMatch) {
-            const name = safeName(decodeURIComponent(readMatch[1]));
-            if (!name) return json(res, 400, { error: 'bad filename' });
-            const full = path.join(tokensDir, name);
-            if (!existsSync(full)) return json(res, 404, { error: 'not found' });
-            const content = JSON.parse(await readFile(full, 'utf8'));
-            return json(res, 200, { name, content });
+            if (!reqFull) return json(res, 400, { error: 'bad filename' });
+            if (!existsSync(reqFull)) return json(res, 404, { error: 'not found' });
+            const content = JSON.parse(await readFile(reqFull, 'utf8'));
+            return json(res, 200, { name: reqName, content });
           }
 
-          // PUT /api/tokens/:name — write
+          // PUT /api/tokens/:name — write (creates subfolders as needed)
           if (req.method === 'PUT' && readMatch) {
-            const name = safeName(decodeURIComponent(readMatch[1]));
-            if (!name) return json(res, 400, { error: 'bad filename' });
-            await ensureDir();
+            if (!reqFull) return json(res, 400, { error: 'bad filename' });
             const body = await readBody(req);
-            const full = path.join(tokensDir, name);
-            await writeFile(full, JSON.stringify(body, null, 2) + '\n', 'utf8');
-            return json(res, 200, { name, ok: true });
+            await mkdir(path.dirname(reqFull), { recursive: true });
+            await writeFile(reqFull, JSON.stringify(body, null, 2) + '\n', 'utf8');
+            return json(res, 200, { name: reqName, ok: true });
           }
 
           // DELETE /api/tokens/:name — delete a file
           if (req.method === 'DELETE' && readMatch) {
-            const name = safeName(decodeURIComponent(readMatch[1]));
-            if (!name) return json(res, 400, { error: 'bad filename' });
-            const full = path.join(tokensDir, name);
-            if (existsSync(full)) await unlink(full);
-            return json(res, 200, { name, ok: true });
+            if (!reqFull) return json(res, 400, { error: 'bad filename' });
+            if (existsSync(reqFull)) await unlink(reqFull);
+            return json(res, 200, { name: reqName, ok: true });
           }
 
           // POST /api/import — Figma plugin → disk. Body: { files: { name: content } }
@@ -189,14 +212,11 @@ export function fileApi(options = {}) {
             const files = body.files || {};
             const written = [];
             for (const [rawName, content] of Object.entries(files)) {
-              const name = safeName(rawName);
-              if (!name) continue;
-              await writeFile(
-                path.join(tokensDir, name),
-                JSON.stringify(content, null, 2) + '\n',
-                'utf8',
-              );
-              written.push(name);
+              const full = bounded(rawName);
+              if (!full) continue;
+              await mkdir(path.dirname(full), { recursive: true });
+              await writeFile(full, JSON.stringify(content, null, 2) + '\n', 'utf8');
+              written.push(safeRel(rawName));
             }
             return json(res, 200, { ok: true, written });
           }
