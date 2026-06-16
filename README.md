@@ -22,17 +22,35 @@ The dev server doubles as the file API: it reads and writes token JSON directly 
 
 ## Token files
 
-DTCG, one file per Figma **mode** (the file-per-mode convention):
+DTCG JSON, one file per collection **mode** (the file-per-mode convention). The
+structure is described by a `tessera.config.json` at the repo root — Tessera reads
+it at startup and derives alias resolution, the compare view, the preview, and CSS
+export from it. Nothing is hardcoded to a particular design system.
 
-| File | Maps to |
-|------|---------|
-| `tokens/primitives.tokens.json` | raw hex palette (single-mode collection `primitives`) |
-| `tokens/core.tokens.json` | shared non-color tokens + a few shared aliases (collection `core`) |
-| `tokens/theme.dark.tokens.json` | collection `theme`, mode `dark` |
-| `tokens/theme.light.tokens.json` | collection `theme`, mode `light` |
+```jsonc
+{
+  "tokensDir": "tokens",
+  "modes": ["dark", "light"],
+  "collections": [
+    { "name": "primitives", "files": { "default": "primitives.tokens.json" } },
+    { "name": "semantic",   "modes": ["dark", "light"],
+      "files": { "dark": "semantic.dark.tokens.json", "light": "semantic.light.tokens.json" } },
+    { "name": "components", "modes": ["dark", "light"],
+      "files": { "dark": "components.dark.tokens.json", "light": "components.light.tokens.json" } }
+  ],
+  "preview": { "collection": "semantic" }
+}
+```
 
-Filenames drive the Figma mapping: `<collection>.tokens.json` (single mode) or
-`<collection>.<mode>.tokens.json` (multi-mode).
+- **Collection order = tier order.** A file's aliases resolve against the collections
+  listed *before* it (same mode where applicable): `components → semantic → primitives`.
+- `preview.collection` picks which collection drives the dark/light preview & compare.
+- With no `tessera.config.json`, Tessera uses this exact 3-tier default and reads from
+  `tokens/` (or the bundled `examples/tokens/` on a fresh clone).
+
+> **Attaching to your app:** drop a `tessera.config.json` in your repo pointing at your
+> token folder + structure, then run Tessera there. Your app builds its own CSS/JS from
+> the JSON (e.g. via Style Dictionary) — Tessera is just the editor, never a dependency.
 
 ### Token architecture (two layers)
 

@@ -1,10 +1,7 @@
-// File-API client + shared token-file naming/form helpers.
-
-export const PRIMITIVES = 'primitives.tokens.json';
-export const semanticFile = (mode) => `semantic.${mode}.tokens.json`;
-export const componentsFile = (mode) => `components.${mode}.tokens.json`;
+// File-API client + shared token-form helpers.
 
 export const api = {
+  config: () => fetch('/api/config').then((r) => r.json()),
   list: () => fetch('/api/tokens').then((r) => r.json()),
   read: (name) => fetch(`/api/tokens/${encodeURIComponent(name)}`).then((r) => r.json()),
   write: (name, content) =>

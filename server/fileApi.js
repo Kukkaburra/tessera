@@ -12,11 +12,36 @@
 // The Figma plugin posts to /api/import from a sandboxed iframe, so CORS is opened.
 
 import { readFile, writeFile, readdir, mkdir, unlink } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const TOKENS_DIRNAME = 'tokens';
 const ORDER_FILE = '.order.json'; // hidden; not a token file
+const CONFIG_FILE = 'tessera.config.json';
+
+// Used when a repo has no tessera.config.json — the primitives→semantic→components
+// layout Tessera was first built around. Apps override this with their own config.
+const DEFAULT_CONFIG = {
+  tokensDir: 'tokens',
+  modes: ['dark', 'light'],
+  collections: [
+    { name: 'primitives', files: { default: 'primitives.tokens.json' } },
+    { name: 'semantic', modes: ['dark', 'light'], files: { dark: 'semantic.dark.tokens.json', light: 'semantic.light.tokens.json' } },
+    { name: 'components', modes: ['dark', 'light'], files: { dark: 'components.dark.tokens.json', light: 'components.light.tokens.json' } },
+  ],
+  preview: { collection: 'semantic' },
+};
+
+function loadConfig(rootDir) {
+  const p = path.join(rootDir, CONFIG_FILE);
+  if (existsSync(p)) {
+    try {
+      return { ...DEFAULT_CONFIG, ...JSON.parse(readFileSync(p, 'utf8')) };
+    } catch (err) {
+      console.warn(`[tessera] could not parse ${CONFIG_FILE}: ${err.message}`);
+    }
+  }
+  return DEFAULT_CONFIG;
+}
 
 // A token file is any non-dot *.json (we treat *.tokens.json and *.json alike).
 const isTokenFile = (f) => f.endsWith('.json') && !f.startsWith('.');
@@ -57,8 +82,15 @@ function safeName(name) {
 }
 
 export function fileApi(options = {}) {
-  // Where token files live. Defaults to <project>/tokens.
-  const tokensDir = options.tokensDir || path.resolve(process.cwd(), TOKENS_DIRNAME);
+  const rootDir = options.rootDir || process.cwd();
+  const config = loadConfig(rootDir);
+  // tokensDir from config (relative to the repo root), with an examples/ fallback
+  // so a fresh clone of Tessera itself still runs.
+  let tokensDir = options.tokensDir;
+  if (!tokensDir) {
+    const declared = path.resolve(rootDir, config.tokensDir || 'tokens');
+    tokensDir = existsSync(declared) ? declared : path.resolve(rootDir, 'examples/tokens');
+  }
 
   async function ensureDir() {
     if (!existsSync(tokensDir)) await mkdir(tokensDir, { recursive: true });
@@ -98,6 +130,11 @@ export function fileApi(options = {}) {
             const all = (await readdir(tokensDir)).filter(isTokenFile);
             const files = applyOrder(all, await readOrder());
             return json(res, 200, { dir: tokensDir, files });
+          }
+
+          // GET /api/config — the resolved token structure (collections/modes/preview)
+          if (req.method === 'GET' && url.pathname === '/api/config') {
+            return json(res, 200, config);
           }
 
           // GET /api/order — saved sidebar order

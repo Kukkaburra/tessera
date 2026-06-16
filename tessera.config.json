@@ -1,0 +1,27 @@
+{
+  "tokensDir": "tokens",
+  "modes": ["dark", "light"],
+  "collections": [
+    {
+      "name": "primitives",
+      "files": { "default": "primitives.tokens.json" }
+    },
+    {
+      "name": "semantic",
+      "modes": ["dark", "light"],
+      "files": {
+        "dark": "semantic.dark.tokens.json",
+        "light": "semantic.light.tokens.json"
+      }
+    },
+    {
+      "name": "components",
+      "modes": ["dark", "light"],
+      "files": {
+        "dark": "components.dark.tokens.json",
+        "light": "components.light.tokens.json"
+      }
+    }
+  ],
+  "preview": { "collection": "semantic" }
+}

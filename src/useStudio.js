@@ -13,18 +13,19 @@ import {
   diffTrees,
 } from './model/dtcg.js';
 import { toCss } from './model/toCss.js';
-import { api, PRIMITIVES, semanticFile, componentsFile, coerceNewValue } from './api.js';
+import { api, coerceNewValue } from './api.js';
 
-// All of Tessera's state, derived data, and actions. The App component is
-// purely the composition of UI pieces around what this hook returns.
+// All of Tessera's state, derived data, and actions. The structure (collections,
+// modes, preview) comes from the repo's tessera.config.json via /api/config, so
+// nothing here is tied to a specific design system's filenames.
 export function useStudio() {
+  const [config, setConfig] = useState(null);
   const [files, setFiles] = useState([]);
   const [dir, setDir] = useState('');
   const [active, setActive] = useState(null);
   const [tree, setTree] = useState(null);
-  const [original, setOriginal] = useState(null); // tree as last loaded/saved (disk state)
-  const [primitivesTree, setPrimitivesTree] = useState(null);
-  const [semantic, setSemantic] = useState({}); // { dark, light } from disk — preview + resolution base
+  const [original, setOriginal] = useState(null);
+  const [cache, setCache] = useState({}); // { filename: tree } — base layers for resolution/preview
   const [showPreview, setShowPreview] = useState(true);
   const [showTree, setShowTree] = useState(true);
   const [compare, setCompare] = useState(false);
@@ -33,6 +34,49 @@ export function useStudio() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [modal, setModal] = useState(null);
+
+  // Static structure derived from the config (the tier model).
+  const model = useMemo(() => {
+    const collections = config?.collections || [];
+    const fileFor = (col, mode) =>
+      col?.files?.[mode] || col?.files?.default || (col?.files ? Object.values(col.files)[0] : undefined);
+    const primaryFile = collections[0] ? fileFor(collections[0]) : null; // most-primitive layer
+    const previewCol =
+      collections.find((c) => c.name === config?.preview?.collection) ||
+      collections.find((c) => (c.modes || []).length > 1) ||
+      null;
+    const tierOf = (name) => {
+      for (let ci = 0; ci < collections.length; ci++) {
+        for (const [mode, fn] of Object.entries(collections[ci].files || {})) {
+          if (fn === name) return { ci, mode: mode === 'default' ? null : mode };
+        }
+      }
+      return null;
+    };
+    // Earlier collections (nearest-first), mode-matched — the alias resolution base.
+    const baseFilesFor = (name) => {
+      const t = tierOf(name);
+      if (!t) return [];
+      const out = [];
+      for (let j = t.ci - 1; j >= 0; j--) {
+        const fn = (t.mode && collections[j].files?.[t.mode]) || fileFor(collections[j]);
+        if (fn) out.push(fn);
+      }
+      return out;
+    };
+    return {
+      collections,
+      fileFor,
+      primaryFile,
+      themedDark: previewCol ? fileFor(previewCol, 'dark') : null,
+      themedLight: previewCol ? fileFor(previewCol, 'light') : null,
+      baseFilesFor,
+      allFiles: collections.flatMap((c) => Object.values(c.files || {})),
+    };
+  }, [config]);
+
+  const liveOrCache = useCallback((fn) => (fn && active === fn ? tree : cache[fn] || {}), [active, tree, cache]);
+  const baseTreesFor = useCallback((name) => model.baseFilesFor(name).map(liveOrCache), [model, liveOrCache]);
 
   const load = useCallback((name) => {
     api.read(name).then(({ content }) => {
@@ -47,39 +91,30 @@ export function useStudio() {
   }, []);
 
   useEffect(() => {
+    api.config().then(setConfig);
+  }, []);
+
+  useEffect(() => {
+    if (!config) return;
     api.list().then(({ files, dir }) => {
       setFiles(files || []);
       setDir(dir || '');
-      if (files?.length) load(files.includes(PRIMITIVES) ? PRIMITIVES : files[0]);
+      if (files?.length) load(files.includes(model.primaryFile) ? model.primaryFile : files[0]);
     });
-    api.read(PRIMITIVES).then((r) => r.content && setPrimitivesTree(r.content)).catch(() => {});
-    ['dark', 'light'].forEach((mode) =>
-      api.read(semanticFile(mode)).then((r) => r.content && setSemantic((s) => ({ ...s, [mode]: r.content }))).catch(() => {}),
+    // cache every collection file so aliases/preview can resolve across tiers
+    model.allFiles.forEach((fn) =>
+      api.read(fn).then((r) => r.content && setCache((c) => ({ ...c, [fn]: r.content }))).catch(() => {}),
     );
-  }, [load]);
-
-  // Tier-aware resolution base: components → semantic(same mode) → primitives.
-  const baseTreesFor = useCallback(
-    (name) => {
-      if (!name) return [primitivesTree || {}];
-      if (name.startsWith('components.')) {
-        const mode = name.includes('.light.') ? 'light' : 'dark';
-        return [semantic[mode] || {}, primitivesTree || {}];
-      }
-      if (name.startsWith('semantic.')) return [primitivesTree || {}];
-      return [];
-    },
-    [primitivesTree, semantic],
-  );
+  }, [config, model, load]);
 
   const openCompare = useCallback(async () => {
-    const [d, l] = await Promise.all([api.read(semanticFile('dark')), api.read(semanticFile('light'))]);
+    const [d, l] = await Promise.all([api.read(model.themedDark), api.read(model.themedLight)]);
     setCompare(true);
     setActive(null);
     setQuery('');
     setStatus('');
     setCmp({ dark: d.content, light: l.content, darkOrig: d.content, lightOrig: l.content });
-  }, []);
+  }, [model]);
 
   const refreshFiles = useCallback(
     async (selectName) => {
@@ -152,9 +187,10 @@ export function useStudio() {
   const cmpDirty =
     compare && (diffTrees(cmp.darkOrig, cmp.dark).length > 0 || diffTrees(cmp.lightOrig, cmp.light).length > 0);
 
-  const livePrimitives = active === PRIMITIVES ? tree : primitivesTree;
-  const darkTheme = compare ? cmp.dark : active === semanticFile('dark') ? tree : semantic.dark;
-  const lightTheme = compare ? cmp.light : active === semanticFile('light') ? tree : semantic.light;
+  // Preview: the themed collection's dark/light files over the primitive layer.
+  const livePrimitives = liveOrCache(model.primaryFile);
+  const darkTheme = compare ? cmp.dark : liveOrCache(model.themedDark);
+  const lightTheme = compare ? cmp.light : liveOrCache(model.themedLight);
 
   const resolveValue = (token) =>
     isAlias(token.$value) ? resolveAlias(token.$value, tree, ...baseTreesFor(active)) : null;
@@ -219,14 +255,11 @@ export function useStudio() {
     setModal(null);
     setStatus('Saving…');
     if (isCompare) {
-      const [r1, r2] = await Promise.all([
-        api.write(semanticFile('dark'), cmp.dark),
-        api.write(semanticFile('light'), cmp.light),
-      ]);
+      const [r1, r2] = await Promise.all([api.write(model.themedDark, cmp.dark), api.write(model.themedLight, cmp.light)]);
       if (r1.ok && r2.ok) {
         setCmp((c) => ({ ...c, darkOrig: c.dark, lightOrig: c.light }));
-        setSemantic((s) => ({ ...s, dark: cmp.dark, light: cmp.light }));
-        setStatus('Saved both semantic themes');
+        setCache((c) => ({ ...c, [model.themedDark]: cmp.dark, [model.themedLight]: cmp.light }));
+        setStatus('Saved both themes');
       } else setStatus(`Error: ${r1.error || r2.error || 'failed'}`);
       return;
     }
@@ -235,18 +268,17 @@ export function useStudio() {
       setOriginal(tree);
       setDirty(false);
       setStatus(`Saved ${active}`);
-      if (active === PRIMITIVES) setPrimitivesTree(tree);
-      if (active === semanticFile('dark')) setSemantic((s) => ({ ...s, dark: tree }));
-      if (active === semanticFile('light')) setSemantic((s) => ({ ...s, light: tree }));
+      setCache((c) => ({ ...c, [active]: tree }));
     } else setStatus(`Error: ${res.error || 'failed'}`);
   };
 
   const openCss = async () => {
-    const names = [PRIMITIVES, semanticFile('dark'), componentsFile('dark'), semanticFile('light'), componentsFile('light')];
-    const [prim, semD, compD, semL, compL] = await Promise.all(
-      names.map((n) => api.read(n).then((r) => r.content || {}).catch(() => ({}))),
+    const read = (fn) => (fn ? api.read(fn).then((r) => r.content || {}).catch(() => ({})) : Promise.resolve({}));
+    const rootLayers = await Promise.all(model.collections.map((c) => read(model.fileFor(c, 'dark'))));
+    const lightLayers = await Promise.all(
+      model.collections.filter((c) => (c.modes || []).includes('light')).map((c) => read(model.fileFor(c, 'light'))),
     );
-    setModal({ kind: 'css', text: toCss({ rootLayers: [prim, semD, compD], lightLayers: [semL, compL] }) });
+    setModal({ kind: 'css', text: toCss({ rootLayers, lightLayers }) });
   };
 
   const downloadJson = () => {
@@ -275,10 +307,10 @@ export function useStudio() {
 
   return {
     // state
-    files, dir, active, tree, primitivesTree, compare, cmp, dirty, query, status, modal,
-    showTree, showPreview,
+    files, dir, active, tree, compare, cmp, dirty, query, status, modal, showTree, showPreview,
     // derived
-    rows, allRows, cmpRows, issues, cmpDirty, resolveValue, darkTheme, lightTheme, livePrimitives,
+    rows, allRows, cmpRows, issues, cmpDirty, resolveValue,
+    darkTheme, lightTheme, livePrimitives, primitivesTree: livePrimitives,
     // setters
     setQuery, setModal, setShowTree, setShowPreview,
     // actions
