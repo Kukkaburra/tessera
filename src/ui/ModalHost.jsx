@@ -2,7 +2,7 @@ import { TOKEN_TYPES } from '../api.js';
 
 // Renders the active modal (css / import / token / file / diff). All state lives
 // in the parent; this is the presentation + which-action-button-to-show switch.
-export default function ModalHost({ modal, active, setModal, onSubmitToken, onSubmitFile, onApplyImport, onCopy, onWrite }) {
+export default function ModalHost({ modal, active, setModal, onSubmitToken, onSubmitFile, onApplyImport, onCopy, onWrite, onApplyMove }) {
   if (!modal) return null;
 
   const title =
@@ -10,7 +10,9 @@ export default function ModalHost({ modal, active, setModal, onSubmitToken, onSu
       ? 'Generated tokens.css'
       : modal.kind === 'import'
         ? 'Import DTCG JSON'
-        : modal.kind === 'token'
+        : modal.kind === 'move'
+          ? `Move into ${modal.targetFile}`
+          : modal.kind === 'token'
           ? modal.mode === 'add'
             ? 'Add token'
             : 'Rename token'
@@ -98,6 +100,28 @@ export default function ModalHost({ modal, active, setModal, onSubmitToken, onSu
             />
             <span className="mt-1 text-[11px] text-white/30">“.tokens.json” is appended if you omit an extension.</span>
           </div>
+        ) : modal.kind === 'move' ? (
+          <div className="m-4 flex flex-col gap-2 text-xs">
+            <span className="text-white/50">
+              Moving <span className="font-mono text-white/80">{modal.fromPath}</span> from{' '}
+              <span className="font-mono text-white/60">{modal.fromFile}</span> →{' '}
+              <span className="font-mono text-white/60">{modal.targetFile}</span>
+            </span>
+            <label className="mt-1 flex flex-col gap-1">
+              <span className="text-white/50">Destination path</span>
+              <input
+                autoFocus
+                value={modal.toPath}
+                onChange={(e) => setModal({ ...modal, toPath: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && onApplyMove()}
+                className={field}
+              />
+            </label>
+            <span className="text-[11px] text-white/30">
+              Keep it the same for a plain move. Change it to re-home the group — every {'{alias}'} that points at
+              it gets rewritten to match.
+            </span>
+          </div>
         ) : modal.kind === 'diff' ? (
           <div className="m-4 max-h-[55vh] overflow-auto rounded border border-white/10 bg-black/40">
             <table className="w-full text-xs">
@@ -137,6 +161,11 @@ export default function ModalHost({ modal, active, setModal, onSubmitToken, onSu
           {modal.kind === 'import' && (
             <button onClick={onApplyImport} className={primary}>
               Load into editor
+            </button>
+          )}
+          {modal.kind === 'move' && (
+            <button onClick={onApplyMove} className={primary}>
+              Preview changes
             </button>
           )}
           {modal.kind === 'token' && (

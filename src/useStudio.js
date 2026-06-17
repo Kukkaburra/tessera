@@ -13,7 +13,7 @@ import {
   diffTrees,
 } from './model/dtcg.js';
 import { toCss } from './model/toCss.js';
-import { applyTextReplace, applyRename } from './model/search.js';
+import { applyTextReplace, applyRename, applyCrossFileMove } from './model/search.js';
 import { api, coerceNewValue } from './api.js';
 
 // All of Tessera's state, derived data, and actions. The structure (collections,
@@ -284,28 +284,34 @@ export function useStudio() {
   const startNodeDrag = (path) => setDragNode({ file: active, path });
   const endNodeDrag = () => setDragNode(null);
 
-  const moveNodeToFile = async (targetFile) => {
+  // Drop a dragged tree node onto a sidebar file → open the move modal (which can
+  // re-home at a new path and update aliases), loading every file for the rewrite.
+  const dropNodeToFile = async (targetFile) => {
     const dn = dragNode;
     setDragNode(null);
     if (!dn || !targetFile || targetFile === dn.file || dn.file !== active) return;
-    const label = dn.path.join('/');
-    const node = getAt(tree, dn.path);
-    if (node === undefined) return;
-    const targetTree = (await api.read(targetFile)).content || {};
-    if (getAt(targetTree, dn.path) !== undefined) return setStatus(`"${label}" already exists in ${targetFile}`);
-    if (!confirm(`Move "${label}" from ${dn.file} → ${targetFile}?`)) return;
+    if (getAt(tree, dn.path) === undefined) return;
+    const { files } = await api.list();
+    const entries = await Promise.all(
+      (files || []).map((f) => (f === active ? [f, tree] : api.read(f).then((r) => [f, r.content]).catch(() => [f, null]))),
+    );
+    const allMap = Object.fromEntries(entries.filter(([, c]) => c));
+    if (!allMap[targetFile]) return setStatus('Target file is unreadable');
+    const dotted = dn.path.join('.');
+    setModal({ kind: 'move', fromFile: dn.file, fromPath: dotted, targetFile, toPath: dotted, allMap });
+  };
 
-    const newTarget = setTokenAt(targetTree, dn.path, structuredClone(node));
-    const newSource = deleteAt(tree, dn.path);
-    const [r1, r2] = await Promise.all([api.write(targetFile, newTarget), api.write(dn.file, newSource)]);
-    if (r1.ok && r2.ok) {
-      setTree(newSource);
-      setOriginal(newSource);
-      setDirty(false);
-      setCache((c) => ({ ...c, [dn.file]: newSource, [targetFile]: newTarget }));
-      setSearchMap((m) => (Object.keys(m).length ? { ...m, [dn.file]: newSource, [targetFile]: newTarget } : m));
-      setStatus(`Moved ${dn.path[dn.path.length - 1]} → ${targetFile}`);
-    } else setStatus(`Error: ${r1.error || r2.error || 'failed'}`);
+  // Preview the move (definition move + alias rewrites) as a combined diff.
+  const applyMove = () => {
+    const { allMap, fromFile, fromPath, targetFile, toPath } = modal;
+    const dest = (toPath || fromPath).trim();
+    const changed = applyCrossFileMove(allMap, fromFile, fromPath, targetFile, dest);
+    if (changed === null) return setStatus(`"${dest}" already exists in ${targetFile}`);
+    if (!Object.keys(changed).length) return setStatus('Nothing to move');
+    const changes = [];
+    for (const [file, tree] of Object.entries(changed))
+      for (const c of diffTrees(allMap[file], tree)) changes.push({ key: `${file} · ${c.key}`, from: c.from, to: c.to });
+    setModal({ kind: 'diff', multiFile: true, files: changed, changes, title: `Move ${fromPath} → ${targetFile}` });
   };
 
   const submitToken = () => {
@@ -426,7 +432,7 @@ export function useStudio() {
     files, dir, active, tree, compare, cmp, dirty, query, status, modal, showTree, showPreview,
     mode, search, searchMap, dragNode,
     setMode, enterSearch, jumpTo, doTextReplace, doRename,
-    startNodeDrag, endNodeDrag, moveNodeToFile,
+    startNodeDrag, endNodeDrag, dropNodeToFile, applyMove,
     // derived
     rows, allRows, cmpRows, issues, cmpDirty, resolveValue, aliasTargets, compareTargets,
     previewTree, previewBases, previewLabel, primitivesTree: primaryTree,

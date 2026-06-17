@@ -28,7 +28,7 @@ export default function App() {
         onDeleteFile={s.deleteFile}
         onReorder={s.moveFile}
         nodeDragging={!!s.dragNode}
-        onDropNodeToFile={s.moveNodeToFile}
+        onDropNodeToFile={s.dropNodeToFile}
       />
 
       {s.showTree && !s.compare && !s.search && s.tree && (
@@ -107,6 +107,7 @@ export default function App() {
         onApplyImport={s.applyImport}
         onCopy={s.copyText}
         onWrite={s.doWrite}
+        onApplyMove={s.applyMove}
       />
     </div>
   );

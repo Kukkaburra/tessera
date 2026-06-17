@@ -85,6 +85,35 @@ export function applyTextReplace(filesMap, find, repl, scopes) {
   return changed;
 }
 
+// Move a token/group from one file to another (optionally at a new path), and
+// rewrite every alias referencing it across all files. Returns { file: newTree }
+// for changed files, or null on a name collision in the target.
+export function applyCrossFileMove(filesMap, fromFile, fromDotted, targetFile, toDotted) {
+  const fromSegs = fromDotted.split('.');
+  const toSegs = toDotted.split('.');
+  const src = filesMap[fromFile] || {};
+  const tgt = filesMap[targetFile] || {};
+  const node = getAt(src, fromSegs);
+  if (node === undefined) return {};
+  if (getAt(tgt, toSegs) !== undefined) return null; // collision in target
+
+  // 1. move the definition: remove from source, add to target at toPath
+  const map = {
+    ...filesMap,
+    [fromFile]: deleteAt(src, fromSegs),
+    [targetFile]: setTokenAt(tgt, toSegs, structuredClone(node)),
+  };
+  // 2. if the path changed, rewrite aliases everywhere to match
+  const aliasChanged = fromDotted !== toDotted ? applyRename(map, fromDotted, toDotted) : {};
+  const merged = { ...map, ...aliasChanged };
+
+  const changed = {};
+  for (const f of new Set([...Object.keys(filesMap), fromFile, targetFile])) {
+    if (JSON.stringify(merged[f] ?? {}) !== JSON.stringify(filesMap[f] ?? {})) changed[f] = merged[f] ?? {};
+  }
+  return changed;
+}
+
 // Token-aware rename: move the token/group at `fromDotted` to `toDotted` AND
 // rewrite every alias that references it (or a descendant) across all files.
 export function applyRename(filesMap, fromDotted, toDotted) {
