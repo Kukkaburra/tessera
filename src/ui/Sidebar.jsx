@@ -16,8 +16,11 @@ export default function Sidebar({
   onRenameFile,
   onDeleteFile,
   onReorder,
+  nodeDragging,
+  onDropNodeToFile,
 }) {
   const [dragIndex, setDragIndex] = useState(null);
+  const [dropFile, setDropFile] = useState(null);
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-white/10 bg-black/20">
@@ -59,13 +62,22 @@ export default function Sidebar({
             key={f}
             draggable
             onDragStart={() => setDragIndex(i)}
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (nodeDragging && dropFile !== f) setDropFile(f);
+            }}
             onDrop={() => {
-              onReorder(dragIndex, i);
+              if (nodeDragging) onDropNodeToFile(f);
+              else onReorder(dragIndex, i);
               setDragIndex(null);
+              setDropFile(null);
             }}
             className={`group flex items-center rounded ${dragIndex === i ? 'opacity-40' : ''} ${
-              f === active ? 'bg-indigo-500/30' : 'hover:bg-white/5'
+              nodeDragging && dropFile === f
+                ? 'bg-indigo-500/20 ring-1 ring-indigo-400'
+                : f === active
+                  ? 'bg-indigo-500/30'
+                  : 'hover:bg-white/5'
             }`}
           >
             <span className="cursor-grab select-none px-1 text-white/20 group-hover:text-white/40" title="Drag to reorder">

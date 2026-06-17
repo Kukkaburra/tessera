@@ -35,6 +35,7 @@ export function useStudio() {
   const search = mode === 'search';
   const [cmp, setCmp] = useState({ dark: null, light: null, darkOrig: null, lightOrig: null });
   const [searchMap, setSearchMap] = useState({}); // { file: tree } across all files, for global search
+  const [dragNode, setDragNode] = useState(null); // { file, path: string[] } — a tree node dragged toward the sidebar
   const [dirty, setDirty] = useState(false);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
@@ -279,6 +280,34 @@ export function useStudio() {
     }
   };
 
+  // ─── cross-file move (drag a tree node onto a sidebar file) ──────────────────
+  const startNodeDrag = (path) => setDragNode({ file: active, path });
+  const endNodeDrag = () => setDragNode(null);
+
+  const moveNodeToFile = async (targetFile) => {
+    const dn = dragNode;
+    setDragNode(null);
+    if (!dn || !targetFile || targetFile === dn.file || dn.file !== active) return;
+    const label = dn.path.join('/');
+    const node = getAt(tree, dn.path);
+    if (node === undefined) return;
+    const targetTree = (await api.read(targetFile)).content || {};
+    if (getAt(targetTree, dn.path) !== undefined) return setStatus(`"${label}" already exists in ${targetFile}`);
+    if (!confirm(`Move "${label}" from ${dn.file} → ${targetFile}?`)) return;
+
+    const newTarget = setTokenAt(targetTree, dn.path, structuredClone(node));
+    const newSource = deleteAt(tree, dn.path);
+    const [r1, r2] = await Promise.all([api.write(targetFile, newTarget), api.write(dn.file, newSource)]);
+    if (r1.ok && r2.ok) {
+      setTree(newSource);
+      setOriginal(newSource);
+      setDirty(false);
+      setCache((c) => ({ ...c, [dn.file]: newSource, [targetFile]: newTarget }));
+      setSearchMap((m) => (Object.keys(m).length ? { ...m, [dn.file]: newSource, [targetFile]: newTarget } : m));
+      setStatus(`Moved ${dn.path[dn.path.length - 1]} → ${targetFile}`);
+    } else setStatus(`Error: ${r1.error || r2.error || 'failed'}`);
+  };
+
   const submitToken = () => {
     const name = modal.name.trim().replace(/^\/+|\/+$/g, '');
     if (!name) return setStatus('Name is required');
@@ -395,8 +424,9 @@ export function useStudio() {
   return {
     // state
     files, dir, active, tree, compare, cmp, dirty, query, status, modal, showTree, showPreview,
-    mode, search, searchMap,
+    mode, search, searchMap, dragNode,
     setMode, enterSearch, jumpTo, doTextReplace, doRename,
+    startNodeDrag, endNodeDrag, moveNodeToFile,
     // derived
     rows, allRows, cmpRows, issues, cmpDirty, resolveValue, aliasTargets, compareTargets,
     previewTree, previewBases, previewLabel, primitivesTree: primaryTree,

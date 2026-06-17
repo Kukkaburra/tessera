@@ -11,9 +11,30 @@
 //
 // The Figma plugin posts to /api/import from a sandboxed iframe, so CORS is opened.
 
-import { readFile, writeFile, readdir, mkdir, unlink } from 'node:fs/promises';
+import { readFile, writeFile, readdir, mkdir, unlink, rmdir } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+
+// Remove now-empty directories from `dir` up to (but not including) `root`.
+async function pruneEmptyDirs(dir, root) {
+  const base = path.resolve(root);
+  let d = path.resolve(dir);
+  while (d !== base && d.startsWith(base + path.sep)) {
+    let entries;
+    try {
+      entries = await readdir(d);
+    } catch {
+      break;
+    }
+    if (entries.length) break;
+    try {
+      await rmdir(d);
+    } catch {
+      break;
+    }
+    d = path.dirname(d);
+  }
+}
 
 const ORDER_FILE = '.order.json'; // hidden; not a token file
 const CONFIG_FILE = 'tessera.config.json';
@@ -200,10 +221,11 @@ export function fileApi(options = {}) {
             return json(res, 200, { name: reqName, ok: true });
           }
 
-          // DELETE /api/tokens/:name — delete a file
+          // DELETE /api/tokens/:name — delete a file, then prune empty parent dirs
           if (req.method === 'DELETE' && readMatch) {
             if (!reqFull) return json(res, 400, { error: 'bad filename' });
             if (existsSync(reqFull)) await unlink(reqFull);
+            await pruneEmptyDirs(path.dirname(reqFull), tokensDir);
             return json(res, 200, { name: reqName, ok: true });
           }
 

@@ -27,11 +27,19 @@ export default function App() {
         onRenameFile={(f) => s.setModal({ kind: 'file', mode: 'rename', orig: f, name: f })}
         onDeleteFile={s.deleteFile}
         onReorder={s.moveFile}
+        nodeDragging={!!s.dragNode}
+        onDropNodeToFile={s.moveNodeToFile}
       />
 
       {s.showTree && !s.compare && !s.search && s.tree && (
         <aside className="w-60 shrink-0">
-          <TreeRail tree={s.tree} onMove={s.moveTreeNode} onSelect={s.setQuery} />
+          <TreeRail
+            tree={s.tree}
+            onMove={s.moveTreeNode}
+            onSelect={s.setQuery}
+            onNodeDragStart={s.startNodeDrag}
+            onNodeDragEnd={s.endNodeDrag}
+          />
         </aside>
       )}
 
