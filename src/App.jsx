@@ -42,7 +42,7 @@ export default function App() {
             onJump={s.jumpTo}
             onReplace={s.doTextReplace}
             onRename={s.doRename}
-            onClose={() => (s.files.length ? s.load(s.files[0]) : s.setSearch(false))}
+            onClose={() => (s.files.length ? s.load(s.files[0]) : s.setMode('edit'))}
           />
         ) : (
           <>

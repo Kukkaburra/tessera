@@ -29,9 +29,11 @@ export function useStudio() {
   const [cache, setCache] = useState({}); // { filename: tree } — base layers for resolution/preview
   const [showPreview, setShowPreview] = useState(true);
   const [showTree, setShowTree] = useState(true);
-  const [compare, setCompare] = useState(false);
+  // One exclusive view mode — switching is atomic, so a view can't be left half-on.
+  const [mode, setMode] = useState('edit'); // 'edit' | 'compare' | 'search'
+  const compare = mode === 'compare';
+  const search = mode === 'search';
   const [cmp, setCmp] = useState({ dark: null, light: null, darkOrig: null, lightOrig: null });
-  const [search, setSearch] = useState(false);
   const [searchMap, setSearchMap] = useState({}); // { file: tree } across all files, for global search
   const [dirty, setDirty] = useState(false);
   const [query, setQuery] = useState('');
@@ -83,8 +85,7 @@ export function useStudio() {
 
   const load = useCallback((name) => {
     api.read(name).then(({ content }) => {
-      setCompare(false);
-      setSearch(false);
+      setMode('edit');
       setActive(name);
       setTree(content);
       setOriginal(content);
@@ -97,8 +98,7 @@ export function useStudio() {
   // Open a token from a search result: load its file and filter the table to it.
   const jumpTo = useCallback((file, name) => {
     api.read(file).then(({ content }) => {
-      setCompare(false);
-      setSearch(false);
+      setMode('edit');
       setActive(file);
       setTree(content);
       setOriginal(content);
@@ -110,8 +110,7 @@ export function useStudio() {
 
   // Enter global-search mode: load every token file into searchMap.
   const enterSearch = useCallback(async () => {
-    setSearch(true);
-    setCompare(false);
+    setMode('search');
     setActive(null);
     setStatus('');
     const { files } = await api.list();
@@ -140,8 +139,7 @@ export function useStudio() {
 
   const openCompare = useCallback(async () => {
     const [d, l] = await Promise.all([api.read(model.themedDark), api.read(model.themedLight)]);
-    setCompare(true);
-    setSearch(false);
+    setMode('compare');
     setActive(null);
     setQuery('');
     setStatus('');
@@ -397,8 +395,8 @@ export function useStudio() {
   return {
     // state
     files, dir, active, tree, compare, cmp, dirty, query, status, modal, showTree, showPreview,
-    search, searchMap,
-    setSearch, enterSearch, jumpTo, doTextReplace, doRename,
+    mode, search, searchMap,
+    setMode, enterSearch, jumpTo, doTextReplace, doRename,
     // derived
     rows, allRows, cmpRows, issues, cmpDirty, resolveValue, aliasTargets, compareTargets,
     previewTree, previewBases, previewLabel, primitivesTree: primaryTree,
