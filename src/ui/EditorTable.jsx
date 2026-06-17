@@ -3,7 +3,7 @@ import ValueEditor from './ValueEditor.jsx';
 
 // Single-file token table. `resolveValue(token)` returns an alias's resolved value
 // (or null for non-aliases); the swatch/text are derived here.
-export default function EditorTable({ rows, issues, resolveValue, onValue, onRename, onDelete }) {
+export default function EditorTable({ rows, issues, resolveValue, targets, onValue, onRename, onDelete }) {
   return (
     <table className="w-full border-collapse">
       <thead className="sticky top-0 bg-[#0b1020] text-left text-[11px] uppercase tracking-wide text-white/40">
@@ -33,7 +33,7 @@ export default function EditorTable({ rows, issues, resolveValue, onValue, onRen
               </td>
               <td className="px-3 py-2 text-[11px] text-white/40">{token.$type || '—'}</td>
               <td className="px-3 py-2">
-                <ValueEditor token={token} onChange={(v) => onValue(path, v)} />
+                <ValueEditor token={token} onChange={(v) => onValue(path, v)} targets={targets} selfPath={path.join('.')} />
               </td>
               <td className="px-3 py-2">
                 <div className="flex items-center gap-1.5">

@@ -73,13 +73,14 @@ export default function App() {
                 rows={s.rows}
                 issues={s.issues}
                 resolveValue={s.resolveValue}
+                targets={s.aliasTargets}
                 onValue={s.onValue}
                 onRename={(name) => s.setModal({ kind: 'token', mode: 'rename', origPath: name, name })}
                 onDelete={s.deleteToken}
               />
             )}
             {s.compare && (
-              <CompareTable cmpRows={s.cmpRows} cmp={s.cmp} primitivesTree={s.primitivesTree} onCmpValue={s.onCmpValue} />
+              <CompareTable cmpRows={s.cmpRows} cmp={s.cmp} primitivesTree={s.primitivesTree} targets={s.compareTargets} onCmpValue={s.onCmpValue} />
             )}
           </div>
 

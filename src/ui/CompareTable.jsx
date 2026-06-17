@@ -3,7 +3,7 @@ import { toCssColor } from '../model/color.js';
 import ValueEditor from './ValueEditor.jsx';
 
 // Dark-vs-Light comparison: each semantic token with both values side by side.
-export default function CompareTable({ cmpRows, cmp, primitivesTree, onCmpValue }) {
+export default function CompareTable({ cmpRows, cmp, primitivesTree, targets, onCmpValue }) {
   const base = primitivesTree || {};
   return (
     <table className="w-full border-collapse">
@@ -26,7 +26,7 @@ export default function CompareTable({ cmpRows, cmp, primitivesTree, onCmpValue 
               <td className="px-5 py-2 font-mono text-xs text-white/80">{name}</td>
               <td className="px-3 py-2">
                 <div className="flex items-center gap-2">
-                  {dTok && <ValueEditor token={dTok} onChange={(v) => onCmpValue('dark', path, v)} />}
+                  {dTok && <ValueEditor token={dTok} onChange={(v) => onCmpValue('dark', path, v)} targets={targets} selfPath={name.split('/').join('.')} />}
                   {dSw && (
                     <span className="h-4 w-4 shrink-0 rounded border border-white/20" style={{ background: dSw }} title={dSw} />
                   )}
@@ -34,7 +34,7 @@ export default function CompareTable({ cmpRows, cmp, primitivesTree, onCmpValue 
               </td>
               <td className="px-3 py-2">
                 <div className="flex items-center gap-2">
-                  {lTok && <ValueEditor token={lTok} onChange={(v) => onCmpValue('light', path, v)} />}
+                  {lTok && <ValueEditor token={lTok} onChange={(v) => onCmpValue('light', path, v)} targets={targets} selfPath={name.split('/').join('.')} />}
                   {lSw && (
                     <span className="h-4 w-4 shrink-0 rounded border border-white/20" style={{ background: lSw }} title={lSw} />
                   )}

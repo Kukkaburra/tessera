@@ -227,6 +227,36 @@ export function useStudio() {
   const resolveValue = (token) =>
     isAlias(token.$value) ? resolveAlias(token.$value, tree, ...baseTreesFor(active)) : null;
 
+  // Candidate tokens an alias can point at (for the value-field token picker):
+  // everything resolvable from the active file — its own tokens + the tier base.
+  const primaryTree = liveOrCache(model.primaryFile);
+  const aliasTargets = useMemo(() => {
+    if (!tree) return [];
+    const all = [tree, ...baseTreesFor(active)];
+    const seen = new Set();
+    const out = [];
+    for (const t of all)
+      for (const { path, token } of flatten(t)) {
+        const dotted = path.join('.');
+        if (seen.has(dotted)) continue;
+        seen.add(dotted);
+        out.push({ path: dotted, type: token.$type, resolved: resolveAlias(token.$value, ...all) });
+      }
+    return out;
+  }, [tree, active, baseTreesFor]);
+  // For the compare view, theme tokens alias the primitive layer.
+  const compareTargets = useMemo(
+    () =>
+      primaryTree
+        ? flatten(primaryTree).map(({ path, token }) => ({
+            path: path.join('.'),
+            type: token.$type,
+            resolved: resolveAlias(token.$value, primaryTree),
+          }))
+        : [],
+    [primaryTree],
+  );
+
   // ─── token edits / CRUD / move ──────────────────────────────────────────────
   const onValue = (path, value) => {
     setTree((t) => setValueAt(t, path, value));
@@ -369,8 +399,8 @@ export function useStudio() {
     search, searchMap,
     setSearch, enterSearch, jumpTo, doTextReplace, doRename,
     // derived
-    rows, allRows, cmpRows, issues, cmpDirty, resolveValue,
-    previewTree, previewBases, previewLabel, primitivesTree: liveOrCache(model.primaryFile),
+    rows, allRows, cmpRows, issues, cmpDirty, resolveValue, aliasTargets, compareTargets,
+    previewTree, previewBases, previewLabel, primitivesTree: primaryTree,
     // setters
     setQuery, setModal, setShowTree, setShowPreview,
     // actions
